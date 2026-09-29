@@ -24,7 +24,18 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-          submodules: recursive
+
+      # This fork keeps LibreOffice's relative submodule URLs, which resolve
+      # against bise86/LibreOffice on GitHub. The data repositories live under
+      # the LibreOffice organization, so configure their canonical URLs before
+      # initializing them.
+      - name: Check out LibreOffice data submodules
+        shell: bash
+        run: |
+          git config submodule.dictionaries.url https://github.com/LibreOffice/dictionaries.git
+          git config submodule.translations.url https://github.com/LibreOffice/translations.git
+          git config submodule.helpcontent2.url https://github.com/LibreOffice/help.git
+          git submodule update --init --depth=1 dictionaries translations helpcontent2
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
