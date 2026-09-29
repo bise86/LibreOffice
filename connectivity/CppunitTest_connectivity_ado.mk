@@ -62,9 +62,10 @@ $(eval $(call gb_CppunitTest_use_components,connectivity_ado,\
 
 $(eval $(call gb_CppunitTest_use_configuration,connectivity_ado))
 
-$(call gb_CppunitTest_get_target,connectivity_ado) : $(WORKDIR)/CppunitTest/TS001018407.mdb
-$(WORKDIR)/CppunitTest/TS001018407.mdb : $(SRCDIR)/connectivity/qa/connectivity/ado/TS001018407.mdb
-	mkdir -p $(dir $@)
-	$(call gb_Deliver_deliver,$<,$@)
+# The ADO test sample TS001018407.mdb was removed from the repository.
+# $(call gb_CppunitTest_get_target,connectivity_ado) : $(WORKDIR)/CppunitTest/TS001018407.mdb
+# $(WORKDIR)/CppunitTest/TS001018407.mdb : $(SRCDIR)/connectivity/qa/connectivity/ado/TS001018407.mdb
+# 	mkdir -p $(dir $@)
+# 	$(call gb_Deliver_deliver,$<,$@)
 
 # vim: set noet sw=4 ts=4:

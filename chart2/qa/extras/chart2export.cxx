@@ -1214,6 +1214,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest, testPieChartRotation)
     assertXPath(pXmlDoc, "/c:chartSpace/c:chart/c:view3D/c:rotY", "val", u"30");
 }
 
+#if 0 // Oversized test sample testchartoleobjectembeddings.docx was removed.
 CPPUNIT_TEST_FIXTURE(Chart2ExportTest, testEmbeddingsOleObjectGrabBag)
 {
    // The problem was that .bin files were missing from docx file from embeddings folder
@@ -1250,6 +1251,7 @@ CPPUNIT_TEST_FIXTURE(Chart2ExportTest, testEmbeddingsOleObjectGrabBag)
    }
    CPPUNIT_ASSERT(bEmbeddings); // Grab Bag has all the expected elements
 }
+#endif
 
 namespace {
 

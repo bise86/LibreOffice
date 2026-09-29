@@ -1160,6 +1160,7 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfFont)
     }
 }
 
+#if 0 // Oversized test sample BasicHindi.pdf was removed.
 CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfHindi)
 {
     auto pPdfium = vcl::pdf::PDFiumLibrary::get();
@@ -1190,6 +1191,8 @@ CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfHindi)
     assertXPath(pXmlDoc, "/office:document/office:automatic-styles/style:style[@style:name='P6']/"
                          "style:text-properties[@style:font-name='AcademyEngravedLetPlain']");
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(SdExportTest, testExplodedPdfGrayscaleImageUnderInvisibleTest)
 {

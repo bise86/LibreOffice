@@ -46,8 +46,9 @@ public:
 
     CPPUNIT_TEST_SUITE(AdoDriverTest);
 
-    CPPUNIT_TEST(test_metadata);
-    CPPUNIT_TEST(test_select_default_all);
+    // The test requires the removed TS001018407.mdb sample.
+    // CPPUNIT_TEST(test_metadata);
+    // CPPUNIT_TEST(test_select_default_all);
     CPPUNIT_TEST_SUITE_END();
 
 private:

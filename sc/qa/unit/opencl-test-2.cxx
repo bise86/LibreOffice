@@ -1068,6 +1068,7 @@ CPPUNIT_TEST_FIXTURE(ScOpenCLTest2, testMathFormulaSumProduct)
     }
 }
 
+#if 0 // Oversized test sample averageif.xls was removed.
 CPPUNIT_TEST_FIXTURE(ScOpenCLTest2, testMathFormulaAverageIf)
 {
     initTestEnv(u"xls/opencl/math/averageif.xls");
@@ -1082,6 +1083,8 @@ CPPUNIT_TEST_FIXTURE(ScOpenCLTest2, testMathFormulaAverageIf)
         CPPUNIT_ASSERT_DOUBLES_EQUAL(fExcel, fLibre, fabs(0.0001*fExcel));
     }
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(ScOpenCLTest2, testStatisticalFormulaAverageA)
 {

@@ -419,12 +419,15 @@ CPPUNIT_TEST_FIXTURE(VBAMacroTest, testUnion)
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
 
+#if 0 // Oversized VBA test sample was removed.
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testRanges4)
 {
     testMacro(
         u"range-4.xls",
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
+
+#endif
 
 // FIXME: sometimes it fails on Windows with
 // Failed:  : Test change event for Range.Clear set:
@@ -456,12 +459,15 @@ CPPUNIT_TEST_FIXTURE(VBAMacroTest, testRanges5)
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
 
+#if 0 // Oversized VBA test sample was removed.
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testRanges2)
 {
     testMacro(
         u"Ranges-2.xls",
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testPageSetup)
 {
@@ -498,12 +504,15 @@ CPPUNIT_TEST_FIXTURE(VBAMacroTest, testShapes)
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
 
+#if 0 // Oversized VBA test sample was removed.
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testRanges)
 {
     testMacro(
         u"Ranges.xls",
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testCheckOptionToggleValue)
 {
@@ -547,12 +556,15 @@ CPPUNIT_TEST_FIXTURE(VBAMacroTest, testNamesSheetLocal)
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
 
+#if 0 // Oversized VBA test sample was removed.
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testendFunction)
 {
     testMacro(
         u"vba_endFunction.xls",
         u"vnd.sun.Star.script:VBAProject.testMacros.test?language=Basic&location=document"_ustr);
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(VBAMacroTest, testfindFunction)
 {

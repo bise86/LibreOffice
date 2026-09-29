@@ -31,9 +31,7 @@ WpftImpressFilterTest::WpftImpressFilterTest()
 void WpftImpressFilterTest::test()
 {
     const writerperfect::test::WpftOptionalMap_t aEtonyekOptional{
-        { "Keynote_1.key", REQUIRE_ETONYEK_VERSION(0, 1, 8) },
         { "Keynote_2.key", REQUIRE_ETONYEK_VERSION(0, 1, 1) },
-        { "Keynote_3.key", REQUIRE_ETONYEK_VERSION(0, 1, 1) },
         { "Keynote_6.key", REQUIRE_ETONYEK_VERSION(0, 1, 4) },
     };
     const writerperfect::test::WpftOptionalMap_t aMWAWOptional{

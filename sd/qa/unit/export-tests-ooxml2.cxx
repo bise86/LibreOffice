@@ -1714,6 +1714,7 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testGroupsRotatedPosition)
                 u"4026960");
 }
 
+#if 0 // Oversized test sample accent-color.pptx was removed.
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testAccentColor)
 {
     createSdImpressDoc("pptx/accent-color.pptx");
@@ -1739,6 +1740,8 @@ CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testAccentColor)
     assertXPath(pXmlDocTheme1, "/a:theme", "name", u"Motyw pakietu Office");
     assertXPath(pXmlDocTheme1, "/a:theme/a:themeElements/a:clrScheme", "name", u"Pakiet Office");
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(SdOOXMLExportTest2, testThemeColors)
 {

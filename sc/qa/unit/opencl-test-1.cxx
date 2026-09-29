@@ -1789,6 +1789,7 @@ CPPUNIT_TEST_FIXTURE(ScOpenCLTest1, testFinancialCouppcdFormula)
     }
 }
 
+#if 0 // Oversized test sample sumifs.xls was removed.
 CPPUNIT_TEST_FIXTURE(ScOpenCLTest1, testMathSumIfsFormula)
 {
     initTestEnv(u"xls/opencl/math/sumifs.xls");
@@ -1822,6 +1823,8 @@ CPPUNIT_TEST_FIXTURE(ScOpenCLTest1, testMathSumIfsFormula)
         CPPUNIT_ASSERT_DOUBLES_EQUAL(fExcel, fLibre, fabs(0.0001*fExcel));
     }
 }
+
+#endif
 
 CPPUNIT_TEST_FIXTURE(ScOpenCLTest1, testMathFormulaArcCotHyp)
 {
