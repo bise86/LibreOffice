@@ -823,7 +823,7 @@ AC_ARG_WITH(android-sdk,
 
 AC_ARG_WITH(android-api-level,
     AS_HELP_STRING([--with-android-api-level],
-        [Specify the API level when building for Android. Defaults to 16 for ARM and x86 and to 21 for ARM64 and x86-64]),
+        [Specify the API level when building for Android. Defaults to API level 29 (Android 10) for all architectures]),
 ,)
 
 ANDROID_NDK_DIR=
@@ -833,7 +833,7 @@ fi
 if test -n "$with_android_ndk"; then
     eval ANDROID_NDK_DIR=$with_android_ndk
 
-    ANDROID_API_LEVEL=21
+    ANDROID_API_LEVEL=29
     if test -n "$with_android_api_level" ; then
         ANDROID_API_LEVEL="$with_android_api_level"
     fi

@@ -8,7 +8,7 @@
             android:title="@string/pref_experimental_editing"
             android:key="ENABLE_EXPERIMENTAL"
             android:summary="@string/pref_experimental_editing_summary"
-            android:defaultValue="false" />
+            android:defaultValue="true" />
         <CheckBoxPreference
             android:title="@string/pref_developer_mode"
             android:key="ENABLE_DEVELOPER"

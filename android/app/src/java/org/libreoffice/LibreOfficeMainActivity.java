@@ -87,6 +87,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     /** Temporary local copy of the document. */
     private File mTempFile = null;
     private File mTempSlideShowFile = null;
+    /** Whether the input document was imported from a PDF source. */
+    private boolean mSourceIsPdf = false;
 
     BottomSheetBehavior bottomToolbarSheetBehavior;
     BottomSheetBehavior toolbarColorPickerBottomSheetBehavior;
@@ -180,6 +182,12 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
                 toolbarTop.setTitle(displayName);
 
             }
+            String intentType = getIntent().getType();
+            if (intentType == null) {
+                intentType = getContentResolver().getType(docUri);
+            }
+            mSourceIsPdf = FileUtilities.MIMETYPE_PDF.equals(intentType)
+                    || String.valueOf(docUri.getPath()).toLowerCase(java.util.Locale.ROOT).endsWith(".pdf");
             // create a temporary local copy to work with
             boolean copyOK = copyFileToTemp(docUri) && mTempFile != null;
             if (!copyOK) {
@@ -277,7 +285,7 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
                     public void onClick(DialogInterface dialog, int which) {
                         switch (which){
                             case DialogInterface.BUTTON_POSITIVE:
-                                mTileProvider.saveDocument();
+                                saveDocument();
                                 isDocumentChanged=false;
                                 forwardBackPress();
                                 break;
@@ -307,7 +315,7 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     private void updatePreferences() {
         SharedPreferences sPrefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
         mIsExperimentalMode = BuildConfig.ALLOW_EDITING
-                && sPrefs.getBoolean(ENABLE_EXPERIMENTAL_PREFS_KEY, false);
+                && sPrefs.getBoolean(ENABLE_EXPERIMENTAL_PREFS_KEY, true);
         mIsDeveloperMode = mIsExperimentalMode
                 && sPrefs.getBoolean(ENABLE_DEVELOPER_PREFS_KEY, false);
         if (sPrefs.getInt(ASSETS_EXTRACTED_PREFS_KEY, 0) != BuildConfig.VERSION_CODE) {
@@ -340,6 +348,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
             suffix = ".csv";
         else if ("text/markdown".equals(intentType))
             suffix = ".md";
+        else if (FileUtilities.MIMETYPE_PDF.equals(intentType))
+            suffix = ".pdf";
 
         try {
             mTempFile = File.createTempFile("LibreOffice", suffix, this.getCacheDir());
@@ -357,8 +367,53 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
      */
     public void saveDocument() {
         Toast.makeText(this, R.string.message_saving, Toast.LENGTH_SHORT).show();
+        if (mSourceIsPdf) {
+            savePdfToOriginalSource();
+            return;
+        }
         // local save
         LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND_NOTIFY, ".uno:Save", true));
+    }
+
+    /**
+     * A PDF opened in Draw is an imported document. Save must export the
+     * edited Draw document back to PDF before copying it to the original URI;
+     * copying mTempFile would otherwise write the unmodified import.
+     */
+    private void savePdfToOriginalSource() {
+        if (mTempFile == null || mDocumentUri == null
+                || !ContentResolver.SCHEME_CONTENT.equals(mDocumentUri.getScheme())) {
+            showCustomStatusMessage(getString(R.string.message_saving_failed));
+            return;
+        }
+
+        File pdfFile = null;
+        boolean saved = false;
+        try {
+            pdfFile = File.createTempFile("LibreOffice_", ".pdf", getCacheDir());
+            mTileProvider.saveDocumentAs(pdfFile.getAbsolutePath(), "pdf", false);
+            if (pdfFile.isFile() && pdfFile.length() > 0) {
+                try (FileInputStream inputStream = new FileInputStream(pdfFile)) {
+                    saved = copyStreamToUri(inputStream, mDocumentUri);
+                }
+            }
+        } catch (IOException e) {
+            Log.e(LOGTAG, "Unable to export edited PDF", e);
+        } finally {
+            if (pdfFile != null) {
+                // noinspection ResultOfMethodCallIgnored
+                pdfFile.delete();
+            }
+        }
+
+        final int msgId = saved ? R.string.message_saved : R.string.message_saving_failed;
+        setDocumentChanged(!saved);
+        LOKitShell.getMainHandler().post(new Runnable() {
+            @Override
+            public void run() {
+                showCustomStatusMessage(getString(msgId));
+            }
+        });
     }
 
     /**
@@ -387,6 +442,7 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         // save in ODF format
         mTileProvider.saveDocumentAs(mTempFile.getPath(), true);
         saveFileToOriginalSource();
+        mSourceIsPdf = false;
 
         String displayName = FileUtilities.retrieveDisplayNameForDocumentUri(getContentResolver(), mDocumentUri);
         toolbarTop.setTitle(displayName);

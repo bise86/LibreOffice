@@ -120,6 +120,7 @@ public class LibreOfficeUIActivity extends AppCompatActivity implements View.OnC
             "image/x-svm",
             "image/x-wmf",
             "image/svg+xml",
+            FileUtilities.MIMETYPE_PDF,
     };
 
     private static final int REQUEST_CODE_OPEN_FILECHOOSER = 12345;
@@ -191,7 +192,7 @@ public class LibreOfficeUIActivity extends AppCompatActivity implements View.OnC
         editFAB.setOnClickListener(this);
         // allow creating new docs only when experimental editing is enabled
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-        final boolean bEditingEnabled = BuildConfig.ALLOW_EDITING && preferences.getBoolean(LibreOfficeMainActivity.ENABLE_EXPERIMENTAL_PREFS_KEY, false);
+        final boolean bEditingEnabled = BuildConfig.ALLOW_EDITING && preferences.getBoolean(LibreOfficeMainActivity.ENABLE_EXPERIMENTAL_PREFS_KEY, true);
         editFAB.setVisibility(bEditingEnabled ? View.VISIBLE : View.INVISIBLE);
 
         impressFAB = findViewById(R.id.newImpressFAB);

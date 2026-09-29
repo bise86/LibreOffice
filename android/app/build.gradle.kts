@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// GitHub ARM64 releases target Android 10 and newer.
+private const val MIN_SUPPORTED_ANDROID_API = 29
+
 // buildhost settings - paths and the like
 apply(from = file("liboSettings.gradle.kts"))
 
@@ -53,7 +56,7 @@ android {
 
     defaultConfig {
         applicationId = androidApplicationId
-        minSdk = androidMinSdkVersion
+        minSdk = maxOf(androidMinSdkVersion, MIN_SUPPORTED_ANDROID_API)
         versionCode = if (project.hasProperty("cmdVersionCode")) project.property("cmdVersionCode").toString().toInt() else 1
         versionName = androidVersionName
         buildConfigField("String", "BUILD_ID_SHORT", buildIdShort)

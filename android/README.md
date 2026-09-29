@@ -159,6 +159,17 @@ App uses material design icons available at [1].
 
 For instructions on how to build for Android, see `README.cross`.
 
+### GitHub Android ARM64 releases
+
+The `Android ARM64 release` workflow builds the editing flavor for
+`arm64-v8a` with API level 29, so the published APK requires Android 10 or
+newer. Run it manually from the Actions tab, or push a tag named
+`android-v<version>` to build and publish a GitHub release. The APK includes
+the existing LibreOfficeKit editing UI; PDF files are opened in Draw, where
+they can be edited and saved back to PDF when the source URI grants write
+access. The artifact is unsigned, so a distribution keystore is required for
+an installable production-signed build.
+
 ### Getting Something Running
 
 Attach your device, so 'adb devices' shows it. Then run:

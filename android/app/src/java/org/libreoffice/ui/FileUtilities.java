@@ -94,6 +94,7 @@ public class FileUtilities {
         mExtnMap.put(".svm",  DRAWING);
         mExtnMap.put(".wmf",  DRAWING);
         mExtnMap.put(".svg",  DRAWING);
+        mExtnMap.put(".pdf",  DRAWING);
     }
 
     public static String getExtension(String filename) {
