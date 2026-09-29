@@ -3,7 +3,7 @@ plugins {
 }
 
 // GitHub ARM64 releases target Android 10 and newer.
-private const val MIN_SUPPORTED_ANDROID_API = 29
+private val MIN_SUPPORTED_ANDROID_API = 29
 
 // buildhost settings - paths and the like
 apply(from = file("liboSettings.gradle.kts"))
