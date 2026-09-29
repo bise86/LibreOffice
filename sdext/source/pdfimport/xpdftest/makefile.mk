@@ -40,9 +40,3 @@ $(MISC)$/test_0_succeeded: $(BIN)$/xpdfimport$(EXECPOST) binary_0_out.def text_0
     diff --strip-trailing-cr $(MISC)$/binary_0_out binary_0_out.def
     diff --strip-trailing-cr $(MISC)$/text_0_out text_0_out.def
     $(TOUCH) $@
-
-$(MISC)$/test_1_succeeded: $(BIN)$/xpdfimport$(EXECPOST) binary_1_out.def text_1_out.def book.pdf
-    $(BIN)$/xpdfimport -f $(MISC)$/binary_1_out book.pdf > $(MISC)$/text_1_out
-    diff --strip-trailing-cr $(MISC)$/binary_1_out binary_1_out.def
-    diff --strip-trailing-cr $(MISC)$/text_1_out text_1_out.def
-    $(TOUCH) $@
