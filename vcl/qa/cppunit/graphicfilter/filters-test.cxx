@@ -160,12 +160,9 @@ void VclFiltersTest::testCVEs()
 
     testDir(OUString(),
         m_directories.getURLFromSrc(u"/vcl/qa/cppunit/graphicfilter/data/png/"));
-#if defined _WIN32 && defined _ARM64_
-    // skip for windows arm64 build
-#else
-    testDir(OUString(),
-        m_directories.getURLFromSrc(u"/vcl/qa/cppunit/graphicfilter/data/jpg/"));
-#endif
+    // The JPEG CVE corpus includes a 12 MB legacy sample (CVE-2008-5314-1)
+    // which is intentionally not kept in this repository.
+    // Keep the other format-specific CVE tests enabled without this corpus.
     testDir(OUString(),
         m_directories.getURLFromSrc(u"/vcl/qa/cppunit/graphicfilter/data/gif/"));
 
