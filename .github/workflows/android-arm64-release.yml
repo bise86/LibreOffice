@@ -2,28 +2,121 @@ name: Android ARM64 release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (for example v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      ref:
+        description: 'Git ref to build'
+        required: true
+        default: 'master'
   push:
     tags:
       - 'android-v*'
       - 'v*'
 
+# Checkout and artifact upload only need read access. The build job below
+# explicitly requests write access because it publishes the GitHub release.
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: android-arm64-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  validate:
+    name: Validate release configuration
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Resolve release version
+        id: metadata
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version="${INPUT_VERSION}"
+          else
+            version="${REF_NAME}"
+          fi
+          case "${version}" in
+            v[0-9]*|android-v[0-9]*) ;;
+            *)
+              echo "::error::Release version must start with v or android-v and contain a version number: ${version}"
+              exit 1
+              ;;
+          esac
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Building release ${version}"
+
+      # Do this before checkout, SDK installation, submodule download, or the
+      # LibreOffice build. A missing or unusable signing key must fail cheaply.
+      - name: Validate Android signing secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for variable in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::Missing required Actions secret: ${variable}"
+              exit 1
+            fi
+          done
+
+          keystore="${RUNNER_TEMP}/android-release.keystore"
+          trap 'rm -f "${keystore}"' EXIT
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${keystore}"
+          test -s "${keystore}"
+          chmod 600 "${keystore}"
+          keytool -list \
+            -keystore "${keystore}" \
+            -storepass "${ANDROID_KEYSTORE_PASSWORD}" \
+            -alias "${ANDROID_KEY_ALIAS}" \
+            >/dev/null
+          echo "Android signing keystore and alias are valid."
+
   build:
-    name: Build Android ARM64 APK
+    name: Build and publish Android ARM64 APK
+    needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    permissions:
+      contents: write
     env:
       ANDROID_API_LEVEL: '29'
       ANDROID_NDK_VERSION: 27.2.12479018
+      VERSION: ${{ needs.validate.outputs.version }}
 
     steps:
       - name: Check out LibreOffice
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       # This fork keeps LibreOffice's relative submodule URLs, which resolve
       # against bise86/LibreOffice on GitHub. The data repositories live under
@@ -32,10 +125,19 @@ jobs:
       - name: Check out LibreOffice data submodules
         shell: bash
         run: |
+          set -euo pipefail
           git config submodule.dictionaries.url https://github.com/LibreOffice/dictionaries.git
           git config submodule.translations.url https://github.com/LibreOffice/translations.git
           git config submodule.helpcontent2.url https://github.com/LibreOffice/help.git
           git submodule update --init --depth=1 dictionaries translations helpcontent2
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: libreoffice-android-arm64-ccache-${{ runner.os }}-${{ hashFiles('configure.ac', 'android/**', 'config_host.mk.in') }}
+          restore-keys: |
+            libreoffice-android-arm64-ccache-${{ runner.os }}-
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -51,6 +153,7 @@ jobs:
       - name: Install Android SDK and native build dependencies
         shell: bash
         run: |
+          set -euo pipefail
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
@@ -63,14 +166,18 @@ jobs:
             libbz2-dev libc6-dev libcap-dev libcurl4-openssl-dev libfontconfig1-dev \
             libfreetype6-dev libkrb5-dev libldap2-dev libltdl-dev libnss3-dev \
             libpng-dev libssl-dev libtool libx11-dev libx11-xcb-dev libxext-dev \
-            libxinerama-dev libxrandr-dev \
-            libxrender-dev libxcb1-dev m4 nasm pkg-config python3-dev python3-setuptools \
-            rsync unzip xsltproc zip zlib1g-dev
+            libxinerama-dev libxrandr-dev libxrender-dev libxcb1-dev m4 nasm pkg-config \
+            python3-dev python3-setuptools rsync unzip xsltproc zip zlib1g-dev
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+          echo "CCACHE_DIR=${HOME}/.cache/ccache" >> "${GITHUB_ENV}"
+          mkdir -p "${HOME}/.cache/ccache"
+          ccache --set-config=cache_dir="${HOME}/.cache/ccache"
+          ccache --max-size=10G
 
       - name: Configure the Android ARM64 build
         shell: bash
         run: |
+          set -euo pipefail
           cat > autogen.input <<EOF
           --with-distro=LibreOfficeAndroidAarch64
           --with-android-sdk=${ANDROID_SDK_ROOT}
@@ -88,42 +195,131 @@ jobs:
       - name: Build the editing APK
         shell: bash
         run: |
+          set -euo pipefail
           make -j2 versionCode="${GITHUB_RUN_NUMBER}" build
 
-      - name: Collect APK and checksum
+      - name: Sign and verify Android ARM64 APK
         id: apk
         shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          apk="$(find android/app/build/outputs/apk/strippedUIEditing/release \
+          set -euo pipefail
+          unsigned_apk="$(find android/app/build/outputs/apk/strippedUIEditing/release \
             -maxdepth 1 -type f -name '*-release-unsigned.apk' -print -quit)"
-          test -n "${apk}"
-          mkdir -p dist
-          version="${GITHUB_REF_NAME#android-v}"
-          version="${version#v}"
-          output="dist/LibreOffice-Android-arm64-v${version}.apk"
-          cp "${apk}" "${output}"
-          sha256sum "${output}" > "${output}.sha256"
-          echo "path=${output}" >> "${GITHUB_OUTPUT}"
+          test -n "${unsigned_apk}"
 
-      - name: Upload workflow artifacts
+          mkdir -p dist
+          keystore="${RUNNER_TEMP}/android-release.keystore"
+          aligned_apk="${RUNNER_TEMP}/libreoffice-arm64-aligned.apk"
+          signed_apk="dist/LibreOffice-Android-arm64-${VERSION}.apk"
+          trap 'rm -f "${keystore}" "${aligned_apk}"' EXIT
+
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${keystore}"
+          chmod 600 "${keystore}"
+          build_tools="${ANDROID_SDK_ROOT}/build-tools/36.0.0"
+          test -x "${build_tools}/zipalign"
+          test -x "${build_tools}/apksigner"
+
+          "${build_tools}/zipalign" -v 4 "${unsigned_apk}" "${aligned_apk}"
+          "${build_tools}/apksigner" sign \
+            --ks "${keystore}" \
+            --ks-key-alias "${ANDROID_KEY_ALIAS}" \
+            --ks-pass "env:ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "env:ANDROID_KEY_PASSWORD" \
+            --out "${signed_apk}" \
+            "${aligned_apk}"
+
+          "${build_tools}/zipalign" -c -v 4 "${signed_apk}"
+          "${build_tools}/apksigner" verify --verbose "${signed_apk}"
+          unzip -l "${signed_apk}" | grep -q 'lib/arm64-v8a/'
+          sha256sum "${signed_apk}" > "${signed_apk}.sha256"
+          echo "path=${signed_apk}" >> "${GITHUB_OUTPUT}"
+          echo "Signed APK: ${signed_apk}"
+
+      - name: Upload signed APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: libreoffice-android-arm64
-          path: dist/
+          path: |
+            dist/*.apk
+            dist/*.sha256
           if-no-files-found: error
 
       - name: Publish GitHub release assets
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/android-v') || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/github-script@v8
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#android-v}"
-          version="${version#v}"
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
-          else
-            gh release create "${GITHUB_REF_NAME}" dist/* \
-              --title "LibreOffice Android ARM64 ${version}" \
-              --generate-notes
-          fi
+          VERSION: ${{ needs.validate.outputs.version }}
+          APK_PATH: ${{ steps.apk.outputs.path }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const version = process.env.VERSION;
+            const files = [
+              process.env.APK_PATH,
+              `${process.env.APK_PATH}.sha256`,
+            ];
+
+            let release;
+            try {
+              ({ data: release } = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: version,
+              }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              ({ data: release } = await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: version,
+                name: `LibreOffice Android ARM64 ${version}`,
+                body: `Signed LibreOffice Android ARM64 build for Android 10 and newer.\n\nPDF files are opened in Draw for editing.`,
+                draft: false,
+                prerelease: false,
+                generate_release_notes: true,
+              }));
+            }
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner,
+              repo,
+              release_id: release.id,
+            });
+            for (const file of files) {
+              const absolutePath = path.resolve(process.env.GITHUB_WORKSPACE, file);
+              if (!fs.existsSync(absolutePath)) {
+                throw new Error(`Release asset not found: ${absolutePath}`);
+              }
+              const name = path.basename(absolutePath);
+              const existing = assets.find((asset) => asset.name === name);
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner,
+                  repo,
+                  asset_id: existing.id,
+                });
+              }
+              const data = fs.readFileSync(absolutePath);
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: release.id,
+                name,
+                data,
+                headers: {
+                  'content-type': name.endsWith('.sha256')
+                    ? 'text/plain'
+                    : 'application/vnd.android.package-archive',
+                  'content-length': data.length,
+                },
+              });
+              core.info(`Uploaded ${name}`);
+            }
