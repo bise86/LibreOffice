@@ -288,6 +288,16 @@ jobs:
               }));
             }
 
+            if (release.draft || release.prerelease) {
+              ({ data: release } = await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: release.id,
+                draft: false,
+                prerelease: false,
+              }));
+            }
+
             const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
               owner,
               repo,
