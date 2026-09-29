@@ -17,7 +17,6 @@ import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
@@ -146,12 +145,10 @@ public class LibreOfficeUIActivity extends AppCompatActivity implements View.OnC
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Window window = getWindow();
-            View decorView = window.getDecorView();
-            int systemUiVisibility = decorView.getSystemUiVisibility() | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            decorView.setSystemUiVisibility(systemUiVisibility);
-        }
+        Window window = getWindow();
+        View decorView = window.getDecorView();
+        int systemUiVisibility = decorView.getSystemUiVisibility() | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        decorView.setSystemUiVisibility(systemUiVisibility);
 
         // init UI
         createUI();
@@ -404,54 +401,52 @@ public class LibreOfficeUIActivity extends AppCompatActivity implements View.OnC
         String value = TextUtils.join(RECENT_DOCUMENTS_DELIMITER, recentsList);
         prefs.edit().putString(RECENT_DOCUMENTS_KEY, value).apply();
 
-        //update app shortcuts (7.0 and above)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N_MR1) {
-            ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
+        // Update app shortcuts (Android 10 and above).
+        ShortcutManager shortcutManager = getSystemService(ShortcutManager.class);
 
-            //Remove all shortcuts, and apply new ones.
-            shortcutManager.removeAllDynamicShortcuts();
+        // Remove all shortcuts, and apply new ones.
+        shortcutManager.removeAllDynamicShortcuts();
 
-            ArrayList<ShortcutInfo> shortcuts = new ArrayList<>();
-            for (String recentDoc : recentsList) {
-                Uri docUri = Uri.parse(recentDoc);
-                String filename = FileUtilities.retrieveDisplayNameForDocumentUri(getContentResolver(), docUri);
-                if (filename.isEmpty()) {
-                    continue;
-                }
-
-                //find the appropriate drawable
-                int drawable = 0;
-                switch (FileUtilities.getType(filename)) {
-                    case FileUtilities.DOC:
-                        drawable = R.drawable.writer;
-                        break;
-                    case FileUtilities.CALC:
-                        drawable = R.drawable.calc;
-                        break;
-                    case FileUtilities.DRAWING:
-                        drawable = R.drawable.draw;
-                        break;
-                    case FileUtilities.IMPRESS:
-                        drawable = R.drawable.impress;
-                        break;
-                }
-
-                Intent intent = new Intent(Intent.ACTION_VIEW, docUri);
-                String packageName = this.getApplicationContext().getPackageName();
-                ComponentName componentName = new ComponentName(packageName, LibreOfficeMainActivity.class.getName());
-                intent.setComponent(componentName);
-
-                ShortcutInfo shortcut = new ShortcutInfo.Builder(this, filename)
-                        .setShortLabel(filename)
-                        .setLongLabel(filename)
-                        .setIcon(Icon.createWithResource(this, drawable))
-                        .setIntent(intent)
-                        .build();
-
-                shortcuts.add(shortcut);
+        ArrayList<ShortcutInfo> shortcuts = new ArrayList<>();
+        for (String recentDoc : recentsList) {
+            Uri docUri = Uri.parse(recentDoc);
+            String filename = FileUtilities.retrieveDisplayNameForDocumentUri(getContentResolver(), docUri);
+            if (filename.isEmpty()) {
+                continue;
             }
-            shortcutManager.setDynamicShortcuts(shortcuts);
+
+            // Find the appropriate drawable.
+            int drawable = 0;
+            switch (FileUtilities.getType(filename)) {
+                case FileUtilities.DOC:
+                    drawable = R.drawable.writer;
+                    break;
+                case FileUtilities.CALC:
+                    drawable = R.drawable.calc;
+                    break;
+                case FileUtilities.DRAWING:
+                    drawable = R.drawable.draw;
+                    break;
+                case FileUtilities.IMPRESS:
+                    drawable = R.drawable.impress;
+                    break;
+            }
+
+            Intent intent = new Intent(Intent.ACTION_VIEW, docUri);
+            String packageName = this.getApplicationContext().getPackageName();
+            ComponentName componentName = new ComponentName(packageName, LibreOfficeMainActivity.class.getName());
+            intent.setComponent(componentName);
+
+            ShortcutInfo shortcut = new ShortcutInfo.Builder(this, filename)
+                    .setShortLabel(filename)
+                    .setLongLabel(filename)
+                    .setIcon(Icon.createWithResource(this, drawable))
+                    .setIntent(intent)
+                    .build();
+
+            shortcuts.add(shortcut);
         }
+        shortcutManager.setDynamicShortcuts(shortcuts);
     }
 
     @Override
