@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="drawing_color_names">
+        <item>黑色</item>
+        <item>红色</item>
+        <item>蓝色</item>
+        <item>绿色</item>
+        <item>黄色</item>
+        <item>洋红</item>
+        <item>青色</item>
+        <item>白色</item>
+    </string-array>
+</resources>

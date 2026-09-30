@@ -5301,6 +5301,32 @@ static void doc_postUnoCommand(LibreOfficeKitDocument* pThis, const char* pComma
 
     std::vector<beans::PropertyValue> aPropertyValuesVector(jsonToPropertyValuesVector(pArguments));
 
+    // Mobile clients use this private LOK command for a true, local eraser.
+    // It is handled by the document implementation instead of dispatching a
+    // normal UNO command, because the operation edits pixels inside a Draw
+    // graphic and has no desktop toolbar equivalent.
+    if (aCommand == ".uno:LOKEraseAt")
+    {
+        ITiledRenderable* pDoc = getTiledRenderable(pThis);
+        if (!pDoc)
+            return;
+
+        sal_Int32 nX = 0;
+        sal_Int32 nY = 0;
+        sal_Int32 nRadius = 0;
+        for (const beans::PropertyValue& rProperty : aPropertyValuesVector)
+        {
+            if (rProperty.Name == "X")
+                rProperty.Value >>= nX;
+            else if (rProperty.Name == "Y")
+                rProperty.Value >>= nY;
+            else if (rProperty.Name == "Radius")
+                rProperty.Value >>= nRadius;
+        }
+        pDoc->eraseAt(nX, nY, nRadius);
+        return;
+    }
+
     if (!vcl::lok::isUnipoll())
     {
         beans::PropertyValue aSynchronMode;

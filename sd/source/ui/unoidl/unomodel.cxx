@@ -18,6 +18,7 @@
  */
 
 #include <memory>
+#include <algorithm>
 
 #include <com/sun/star/presentation/XPresentation2.hpp>
 
@@ -93,6 +94,9 @@
 
 #include <editeng/UnoForbiddenCharsTable.hxx>
 #include <svx/svdoutl.hxx>
+#include <svx/svdograf.hxx>
+#include <svx/svditer.hxx>
+#include <svx/svdmrkv.hxx>
 #include <o3tl/any.hxx>
 #include <o3tl/safeint.hxx>
 #include <o3tl/string_view.hxx>
@@ -158,6 +162,9 @@
 
 #include <vcl/pdfextoutdevdata.hxx>
 #include <vcl/pdf/PDFNote.hxx>
+#include <vcl/BitmapWriteAccess.hxx>
+#include <vcl/bitmap.hxx>
+#include <vcl/graph.hxx>
 
 #include <com/sun/star/presentation/AnimationSpeed.hpp>
 #include <com/sun/star/presentation/ClickAction.hpp>
@@ -4411,6 +4418,113 @@ void SdXImpressDocument::postMouseEvent(int nType, int nX, int nY, int nCount, i
     LokMouseEventData aMouseEventData(nType, aPointHMM, nCount, MouseEventModifiers::SIMPLECLICK,
                                       nButtons, nModifier);
     SfxLokHelper::postMouseEventAsync(pViewShell->GetActiveWindow(), aMouseEventData);
+}
+
+bool SdXImpressDocument::eraseAt(int nX, int nY, int nRadius)
+{
+    SolarMutexGuard aGuard;
+
+    DrawViewShell* pViewShell = GetViewShell();
+    if (!pViewShell || !mpDoc || nRadius <= 0 || SfxViewShell::IsCurrentLokViewReadOnly())
+        return false;
+
+    SdrView* pDrawView = pViewShell->GetView();
+    SdrPageView* pPageView = pDrawView ? pDrawView->GetSdrPageView() : nullptr;
+    if (!pDrawView || !pPageView)
+        return false;
+
+    pDrawView->SdrEndTextEdit();
+    // LOK coordinates are twips, while Draw's object geometry is 1/100 mm.
+    const Point aPoint(convertTwipToMm100(nX), convertTwipToMm100(nY));
+    const double fRadius = convertTwipToMm100(nRadius);
+    SdrObject* pObject = pDrawView->PickObj(aPoint, 0, pPageView, SdrSearchOptions::DEEP);
+    if (!pObject)
+        return false;
+
+    // Text, paths and other native Draw objects do not have pixels to edit;
+    // retain the old eraser behavior for those objects.
+    SdrGrafObj* pGraphicObject = dynamic_cast<SdrGrafObj*>(pObject);
+    if (!pGraphicObject)
+    {
+        pDrawView->UnmarkAllObj();
+        pDrawView->MarkObj(pObject, pPageView);
+        pDrawView->DeleteMarked();
+        return true;
+    }
+
+    const tools::Rectangle& rObjectRect = pGraphicObject->GetLogicRect();
+    if (rObjectRect.IsEmpty() || !rObjectRect.Contains(aPoint))
+        return false;
+
+    const Graphic& rGraphic = pGraphicObject->GetGraphic();
+    const Size aPixelSize = rGraphic.GetSizePixel();
+
+    // Rasterizing here is intentional: it makes a scanned page and an
+    // embedded vector/PDF graphic locally erasable while retaining all other
+    // Draw objects and the original page geometry.
+    // Metafiles and vector graphics may not report a pixel size.  Let VCL
+    // choose a bounded conversion size in that case instead of treating the
+    // document's 1/100 mm geometry as a pixel count.
+    Bitmap aBitmap = aPixelSize.IsEmpty()
+                         ? rGraphic.GetBitmap(GraphicConversionParameters())
+                         : rGraphic.GetBitmap(GraphicConversionParameters(aPixelSize, false, true));
+    if (aBitmap.IsEmpty())
+        return false;
+    if (!aBitmap.Convert(BmpConversion::N32Bit))
+        return false;
+
+    const double fX = static_cast<double>(aPoint.X() - rObjectRect.Left())
+                      / std::max<tools::Long>(1, rObjectRect.GetWidth());
+    const double fY = static_cast<double>(aPoint.Y() - rObjectRect.Top())
+                      / std::max<tools::Long>(1, rObjectRect.GetHeight());
+    const tools::Long nCenterX = std::clamp<tools::Long>(
+        static_cast<tools::Long>(fX * aBitmap.GetSizePixel().Width()), 0,
+        aBitmap.GetSizePixel().Width() - 1);
+    const tools::Long nCenterY = std::clamp<tools::Long>(
+        static_cast<tools::Long>(fY * aBitmap.GetSizePixel().Height()), 0,
+        aBitmap.GetSizePixel().Height() - 1);
+    const tools::Long nRadiusX = std::max<tools::Long>(1,
+        static_cast<tools::Long>(fRadius
+            * aBitmap.GetSizePixel().Width()
+            / static_cast<double>(std::max<tools::Long>(1, rObjectRect.GetWidth()))));
+    const tools::Long nRadiusY = std::max<tools::Long>(1,
+        static_cast<tools::Long>(fRadius
+            * aBitmap.GetSizePixel().Height()
+            / static_cast<double>(std::max<tools::Long>(1, rObjectRect.GetHeight()))));
+
+    BitmapScopedWriteAccess pWriteAccess(aBitmap);
+    if (!pWriteAccess)
+        return false;
+    const BitmapColor aTransparent(ColorAlpha, 255, 255, 255, 0);
+    const tools::Long nMinY = std::max<tools::Long>(0, nCenterY - nRadiusY);
+    const tools::Long nMaxY = std::min<tools::Long>(aBitmap.GetSizePixel().Height() - 1,
+                                                     nCenterY + nRadiusY);
+    const tools::Long nMinX = std::max<tools::Long>(0, nCenterX - nRadiusX);
+    const tools::Long nMaxX = std::min<tools::Long>(aBitmap.GetSizePixel().Width() - 1,
+                                                     nCenterX + nRadiusX);
+    for (tools::Long y = nMinY; y <= nMaxY; ++y)
+    {
+        for (tools::Long x = nMinX; x <= nMaxX; ++x)
+        {
+            const double dx = static_cast<double>(x - nCenterX) / nRadiusX;
+            const double dy = static_cast<double>(y - nCenterY) / nRadiusY;
+            if (dx * dx + dy * dy <= 1.0)
+                pWriteAccess->SetPixel(y, x, aTransparent);
+        }
+    }
+    pWriteAccess.reset();
+
+    // ReplaceObjectAtView records an undoable replacement and preserves the
+    // graphic object's frame, name, hyperlink and other Draw attributes.
+    rtl::Reference<SdrGrafObj> pReplacement = SdrObject::Clone(*pGraphicObject, *mpDoc);
+    if (pReplacement->IsLinkedGraphic())
+        pReplacement->ReleaseGraphicLink();
+    pReplacement->SetGraphic(Graphic(aBitmap));
+    pDrawView->BegUndo();
+    // Do not leave selection handles visible while the eraser is active.
+    pDrawView->ReplaceObjectAtView(pGraphicObject, *pPageView, pReplacement.get(), false);
+    pDrawView->EndUndo();
+    return true;
 }
 
 void SdXImpressDocument::setTextSelection(int nType, int nX, int nY)

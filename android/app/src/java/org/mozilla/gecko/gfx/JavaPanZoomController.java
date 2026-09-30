@@ -835,6 +835,9 @@ class JavaPanZoomController
     @Override
     public boolean onDown(MotionEvent motionEvent) {
         mWaitForDoubleTap = mTarget.getZoomConstraints() != null;
+        if (mContext.isEraserMode()) {
+            LOKitShell.sendTouchEvent("EraserStart", getMotionInDocumentCoordinates(motionEvent));
+        }
         return false;
     }
 
@@ -862,6 +865,10 @@ class JavaPanZoomController
 
     @Override
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+        if (mContext.isEraserMode()) {
+            LOKitShell.sendTouchEvent("EraserMove", getMotionInDocumentCoordinates(e2));
+            return true;
+        }
         mContext.getDocumentOverlay().showPageNumberRect();
         return super.onScroll(e1, e2, distanceX, distanceY);
     }

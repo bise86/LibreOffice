@@ -265,6 +265,7 @@ public:
     SD_DLLPUBLIC virtual void postKeyEvent(int nType, int nCharCode, int nKeyCode) override;
     /// @see vcl::ITiledRenderable::postMouseEvent().
     SD_DLLPUBLIC virtual void postMouseEvent(int nType, int nX, int nY, int nCount, int nButtons, int nModifier) override;
+    virtual bool eraseAt(int nX, int nY, int nRadius) override;
     /// @see vcl::ITiledRenderable::setTextSelection().
     SD_DLLPUBLIC virtual void setTextSelection(int nType, int nX, int nY) override;
     /// @see vcl::ITiledRenderable::getSelection().

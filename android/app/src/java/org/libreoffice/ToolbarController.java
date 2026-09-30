@@ -76,6 +76,12 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
                     mMainMenu.setGroupVisible(R.id.group_spreadsheet_options, true);
                 } else if(mContext.getTileProvider() != null && mContext.getTileProvider().isPresentation()){
                     mMainMenu.setGroupVisible(R.id.group_presentation_options, true);
+                } else if(mContext.getTileProvider() != null && mContext.getTileProvider().isDrawing()){
+                    mMainMenu.setGroupVisible(R.id.group_drawing_options, true);
+                    mMainMenu.findItem(R.id.action_add_page).setVisible(true);
+                    mMainMenu.findItem(R.id.action_duplicate_page).setVisible(true);
+                    mMainMenu.findItem(R.id.action_rename_page).setVisible(true);
+                    mMainMenu.findItem(R.id.action_delete_page).setVisible(true);
                 }
                 mToolbarTop.setNavigationIcon(R.drawable.ic_check);
                 mToolbarTop.setLogo(null);
@@ -143,6 +149,8 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
                     mMainMenu.setGroupVisible(R.id.group_spreadsheet_options, false);
                 } else if(mContext.getTileProvider() != null && mContext.getTileProvider().isPresentation()){
                     mMainMenu.setGroupVisible(R.id.group_presentation_options, false);
+                } else if(mContext.getTileProvider() != null && mContext.getTileProvider().isDrawing()){
+                    mMainMenu.setGroupVisible(R.id.group_drawing_options, false);
                 }
             }
         });
@@ -191,10 +199,18 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
         } else if (itemId == R.id.action_add_slide || itemId == R.id.action_add_worksheet) {
             mContext.addPart();
             return true;
-        } else if (itemId == R.id.action_rename_worksheet || itemId == R.id.action_rename_slide) {
+        } else if (itemId == R.id.action_add_page) {
+            mContext.addPart();
+            return true;
+        } else if (itemId == R.id.action_duplicate_page) {
+            mContext.duplicatePart();
+            return true;
+        } else if (itemId == R.id.action_rename_worksheet || itemId == R.id.action_rename_slide
+                || itemId == R.id.action_rename_page) {
             mContext.renamePart();
             return true;
-        } else if (itemId == R.id.action_delete_worksheet || itemId == R.id.action_delete_slide) {
+        } else if (itemId == R.id.action_delete_worksheet || itemId == R.id.action_delete_slide
+                || itemId == R.id.action_delete_page) {
             mContext.deletePart();
             return true;
         } else if (itemId == R.id.action_back) {
@@ -220,6 +236,16 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
         } else if (itemId == R.id.action_UNO_commands) {
             mContext.showUNOCommandsToolbar();
             return true;
+        } else if (itemId == R.id.action_insert_comment) {
+            mContext.showCommentDialog();
+            return true;
+        } else if (itemId == R.id.action_delete_comment) {
+            String deleteCommand = mContext.getTileProvider() != null
+                    && mContext.getTileProvider().isDrawing()
+                    ? ".uno:DeleteAnnotation" : ".uno:DeleteComment";
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, deleteCommand));
+            mContext.setDocumentChanged(true);
+            return true;
         }
         return false;
     }
@@ -228,6 +254,8 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
         if (LibreOfficeMainActivity.isExperimentalMode()) {
             boolean enableSaveEntry = !LibreOfficeMainActivity.isReadOnlyMode() && mContext.hasLocationForSave();
             setItemVisible(R.id.action_save, enableSaveEntry);
+            setItemVisible(R.id.action_save_as, !LibreOfficeMainActivity.isReadOnlyMode());
+            setItemVisible(R.id.action_exportToPDF, !LibreOfficeMainActivity.isReadOnlyMode());
             if (LibreOfficeMainActivity.isReadOnlyMode()) {
                 // show message in case experimental mode is enabled (i.e. editing is supported in general),
                 // but current document is readonly
@@ -235,8 +263,19 @@ public class ToolbarController implements Toolbar.OnMenuItemClickListener {
             }
         } else {
             setItemVisible(R.id.action_save, false);
+            setItemVisible(R.id.action_save_as, false);
+            setItemVisible(R.id.action_exportToPDF, false);
         }
         setItemVisible(R.id.action_parts, mContext.isDrawerEnabled());
+        LOKitShell.getMainHandler().post(new Runnable() {
+            @Override
+            public void run() {
+                // The menu group is hidden in XML so it does not appear in the
+                // viewer; editing builds need its actions to be reachable.
+                mMainMenu.setGroupVisible(R.id.group_misc_actions,
+                        LibreOfficeMainActivity.isExperimentalMode());
+            }
+        });
 
         final boolean enablePrint = mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_PRINTING);
         setItemVisible(R.id.action_print, enablePrint);

@@ -132,10 +132,37 @@ public class InvalidationHandler implements Document.MessageCallback, Office.Mes
                 break;
             case Document.CALLBACK_DOCUMENT_SIZE_CHANGED:
                 pageSizeChanged(payload);
+                break;
+            case Document.CALLBACK_COMMENT:
+                commentChanged(payload);
+                break;
             default:
 
                 Log.d(LOGTAG, "LOK_CALLBACK uncaught: " + messageID + " : " + payload);
         }
+    }
+
+    private void commentChanged(final String payload) {
+        // Keep annotation edits visible to the user even though the core handles
+        // the actual PDF/ODG annotation object and persistence.
+        LOKitShell.getMainHandler().post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    JSONObject value = new JSONObject(payload);
+                    String action = value.optString("action");
+                    if ("Add".equals(action)) {
+                        Toast.makeText(mContext, R.string.comment_added, Toast.LENGTH_SHORT).show();
+                    } else if ("Modify".equals(action)) {
+                        Toast.makeText(mContext, R.string.comment_updated, Toast.LENGTH_SHORT).show();
+                    } else if ("Remove".equals(action)) {
+                        Toast.makeText(mContext, R.string.comment_deleted, Toast.LENGTH_SHORT).show();
+                    }
+                } catch (JSONException e) {
+                    Log.w(LOGTAG, "Invalid comment callback: " + payload, e);
+                }
+            }
+        });
     }
 
     private void unoCommandResult(String payload) {
@@ -166,6 +193,16 @@ public class InvalidationHandler implements Document.MessageCallback, Office.Mes
                         mContext.getDocumentPartViewListAdapter().notifyDataSetChanged();
                         LibreOfficeMainActivity.setDocumentChanged(true);
                         Toast.makeText(mContext, mContext.getString(R.string.part_deleted), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } else if(payloadObject.getString("commandName").equals(".uno:InsertPage") ||
+                    payloadObject.getString("commandName").equals(".uno:DuplicatePage")) {
+                LOKitShell.getMainHandler().post(new Runnable() {
+                    @Override
+                    public void run() {
+                        mContext.getTileProvider().resetParts();
+                        mContext.getDocumentPartViewListAdapter().notifyDataSetChanged();
+                        LibreOfficeMainActivity.setDocumentChanged(true);
                     }
                 });
             }
@@ -344,7 +381,9 @@ public class InvalidationHandler implements Document.MessageCallback, Office.Mes
             mContext.getFontController().colorPaletteListener.updateColorPickerPosition(Integer.parseInt(value));
         } else if (mContext.getTileProvider().isTextDocument() && (parts[0].equals(".uno:BackColor") || parts[0].equals(".uno:CharBackColor"))) {
             mContext.getFontController().backColorPaletteListener.updateColorPickerPosition(Integer.parseInt(value));
-        } else if (mContext.getTileProvider().isPresentation() && parts[0].equals(".uno:CharBackColor")) {
+        } else if ((mContext.getTileProvider().isPresentation()
+                || mContext.getTileProvider().isDrawing())
+                && parts[0].equals(".uno:CharBackColor")) {
             mContext.getFontController().backColorPaletteListener.updateColorPickerPosition(Integer.parseInt(value));
         } else if (mContext.getTileProvider().isSpreadsheet() && parts[0].equals(".uno:BackgroundColor")) {
             mContext.getFontController().backColorPaletteListener.updateColorPickerPosition(Integer.parseInt(value));

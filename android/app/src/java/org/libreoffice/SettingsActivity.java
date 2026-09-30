@@ -18,8 +18,14 @@ import androidx.core.graphics.Insets;
 import androidx.fragment.app.FragmentActivity;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroup;
+import androidx.preference.ListPreference;
 
 public class SettingsActivity extends FragmentActivity {
+    @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase));
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,6 +62,14 @@ public class SettingsActivity extends FragmentActivity {
         @Override
         public void onCreate(Bundle savedInstanceState) {
             super.onCreate(savedInstanceState);
+            ListPreference languagePreference = findPreference(LocaleHelper.LANGUAGE_PREFS_KEY);
+            if (languagePreference != null) {
+                languagePreference.setOnPreferenceChangeListener((preference, newValue) -> {
+                    LocaleHelper.setLanguage(requireContext(), String.valueOf(newValue));
+                    requireActivity().recreate();
+                    return true;
+                });
+            }
             if(!BuildConfig.ALLOW_EDITING) {
                 PreferenceGroup generalGroup = findPreference("PREF_CATEGORY_GENERAL");
                 generalGroup.removePreference(generalGroup.findPreference("ENABLE_EXPERIMENTAL"));
@@ -65,7 +79,8 @@ public class SettingsActivity extends FragmentActivity {
     }
 
     public static boolean hasSettings() {
-        return BuildConfig.ALLOW_EDITING;
+        // Language selection is useful in both viewer and editing builds.
+        return true;
     }
 }
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

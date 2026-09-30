@@ -64,6 +64,7 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     private static final String ENABLE_DEVELOPER_PREFS_KEY = "ENABLE_DEVELOPER";
     private static final int REQUEST_CODE_SAVEAS = 12345;
     private static final int REQUEST_CODE_EXPORT_TO_PDF = 12346;
+    private static final int REQUEST_CODE_SAVE_PDF_AS = 12347;
 
     //TODO "public static" is a temporary workaround
     public static LOKitThread loKitThread;
@@ -88,6 +89,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     private File mTempSlideShowFile = null;
     /** Whether the input document was imported from a PDF source. */
     private boolean mSourceIsPdf = false;
+    /** Whether the original content URI can be overwritten. */
+    private boolean mCanWriteDocumentUri = false;
 
     BottomSheetBehavior bottomToolbarSheetBehavior;
     BottomSheetBehavior toolbarColorPickerBottomSheetBehavior;
@@ -102,6 +105,11 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     private String mPassword;
     private boolean mPasswordProtected;
     private boolean mbSkipNextRefresh;
+
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase));
+    }
 
     public GeckoLayerClient getLayerClient() {
         return mLayerClient;
@@ -120,6 +128,29 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     private boolean isSearchToolbarOpen = false;
     private static boolean isDocumentChanged = false;
     private boolean isUNOCommandsToolbarOpen = false;
+    /** When enabled, touch input is routed to the local pixel eraser. */
+    private boolean mEraserMode = false;
+
+    public boolean isEraserMode() {
+        return mEraserMode;
+    }
+
+    void setEraserMode(boolean enabled) {
+        mEraserMode = enabled && !isReadOnlyMode()
+                && mTileProvider != null && mTileProvider.isDrawing();
+        if (!mEraserMode) {
+            View eraserButton = findViewById(R.id.button_eraser);
+            if (eraserButton != null) {
+                eraserButton.setSelected(false);
+                if (eraserButton.getBackground() != null) {
+                    eraserButton.getBackground().setState(new int[]{-android.R.attr.state_selected});
+                }
+            }
+        }
+        if (mEraserMode && mDocumentOverlay != null) {
+            mDocumentOverlay.hideGraphicSelection();
+        }
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -174,7 +205,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         if (docUri != null) {
             if (docUri.getScheme().equals(ContentResolver.SCHEME_CONTENT)
                     || docUri.getScheme().equals(ContentResolver.SCHEME_ANDROID_RESOURCE)) {
-                mbReadOnlyDoc  = (getIntent().getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0;
+                mCanWriteDocumentUri = (getIntent().getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0;
+                mbReadOnlyDoc = !mCanWriteDocumentUri;
                 Log.d(LOGTAG, "SCHEME_CONTENT: getPath(): " + docUri.getPath());
 
                 String displayName = FileUtilities.retrieveDisplayNameForDocumentUri(getContentResolver(), docUri);
@@ -187,6 +219,11 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
             }
             mSourceIsPdf = FileUtilities.MIMETYPE_PDF.equals(intentType)
                     || String.valueOf(docUri.getPath()).toLowerCase(java.util.Locale.ROOT).endsWith(".pdf");
+            // PDF files are imported into a local Draw document.  Editing that
+            // local copy does not require write access to the source provider.
+            if (mSourceIsPdf) {
+                mbReadOnlyDoc = false;
+            }
             // create a temporary local copy to work with
             boolean copyOK = copyFileToTemp(docUri) && mTempFile != null;
             if (!copyOK) {
@@ -349,6 +386,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
             suffix = ".md";
         else if (FileUtilities.MIMETYPE_PDF.equals(intentType))
             suffix = ".pdf";
+        else if (String.valueOf(documentUri.getPath()).toLowerCase(java.util.Locale.ROOT).endsWith(".pdf"))
+            suffix = ".pdf";
 
         try {
             mTempFile = File.createTempFile("LibreOffice", suffix, this.getCacheDir());
@@ -367,7 +406,11 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     public void saveDocument() {
         Toast.makeText(this, R.string.message_saving, Toast.LENGTH_SHORT).show();
         if (mSourceIsPdf) {
-            savePdfToOriginalSource();
+            if (mCanWriteDocumentUri) {
+                savePdfToOriginalSource();
+            } else {
+                saveDocumentAsPdf();
+            }
             return;
         }
         // local save
@@ -390,8 +433,8 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         boolean saved = false;
         try {
             pdfFile = File.createTempFile("LibreOffice_", ".pdf", getCacheDir());
-            mTileProvider.saveDocumentAs(pdfFile.getAbsolutePath(), "pdf", false);
-            if (pdfFile.isFile() && pdfFile.length() > 0) {
+            boolean exported = mTileProvider.saveDocumentAs(pdfFile.getAbsolutePath(), "pdf", false);
+            if (exported && pdfFile.isFile() && pdfFile.length() > 0) {
                 try (FileInputStream inputStream = new FileInputStream(pdfFile)) {
                     saved = copyStreamToUri(inputStream, mDocumentUri);
                 }
@@ -420,6 +463,10 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
      * selected there.
      */
     public void saveDocumentAs() {
+        if (mSourceIsPdf) {
+            saveDocumentAsPdf();
+            return;
+        }
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         String mimeType = getODFMimeTypeForDocument();
@@ -427,6 +474,22 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, mDocumentUri);
 
         startActivityForResult(intent, REQUEST_CODE_SAVEAS);
+    }
+
+    /** Open a writable PDF destination for an imported PDF document. */
+    private void saveDocumentAsPdf() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(FileUtilities.MIMETYPE_PDF);
+        if (mDocumentUri != null) {
+            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, mDocumentUri);
+        }
+        final String displayName = toolbarTop.getTitle() == null
+                ? getString(R.string.default_document_name) : toolbarTop.getTitle().toString();
+        intent.putExtra(Intent.EXTRA_TITLE,
+                FileUtilities.stripExtensionFromFileName(displayName) + ".pdf");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        startActivityForResult(intent, REQUEST_CODE_SAVE_PDF_AS);
     }
 
     /**
@@ -447,6 +510,23 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         getToolbarController().setupToolbars();
     }
 
+    private void savePdfAs(Uri newUri) {
+        mDocumentUri = newUri;
+        mCanWriteDocumentUri = true;
+        exportToPDF(newUri);
+        String displayName = FileUtilities.retrieveDisplayNameForDocumentUri(getContentResolver(), mDocumentUri);
+        if (displayName != null && !displayName.isEmpty()) {
+            toolbarTop.setTitle(displayName);
+        }
+        mbReadOnlyDoc = false;
+        getToolbarController().setupToolbars();
+    }
+
+    /** Whether the current source was imported from PDF. */
+    public boolean isPdfDocument() {
+        return mSourceIsPdf;
+    }
+
     public void exportToPDF() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -465,13 +545,14 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         File tempFile = null;
         try {
             tempFile = File.createTempFile("LibreOffice_", ".pdf");
-            mTileProvider.saveDocumentAs(tempFile.getAbsolutePath(),"pdf", false);
+            boolean exported = mTileProvider.saveDocumentAs(tempFile.getAbsolutePath(), "pdf", false);
 
-            try {
-                FileInputStream inputStream = new FileInputStream(tempFile);
-                exportOK = copyStreamToUri(inputStream, uri);
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
+            if (exported && tempFile.isFile() && tempFile.length() > 0) {
+                try (FileInputStream inputStream = new FileInputStream(tempFile)) {
+                    exportOK = copyStreamToUri(inputStream, uri);
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                }
             }
 
         } catch (IOException e) {
@@ -796,6 +877,13 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         });
     }
 
+    /** Open the native annotation editor used for PDF comments. */
+    public void showCommentDialog() {
+        if (mFormattingController != null) {
+            mFormattingController.showCommentDialog();
+        }
+    }
+
     public void hideUNOCommandsToolbar() {
         LOKitShell.getMainHandler().post(new Runnable() {
             @Override
@@ -862,6 +950,11 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
     public void addPart(){
         mTileProvider.addPart();
         mDocumentPartViewListAdapter.notifyDataSetChanged();
+        setDocumentChanged(true);
+    }
+
+    public void duplicatePart(){
+        mTileProvider.duplicatePart();
         setDocumentChanged(true);
     }
 
@@ -1161,6 +1254,19 @@ public class LibreOfficeMainActivity extends AppCompatActivity implements Shared
         if (requestCode == REQUEST_CODE_SAVEAS && resultCode == RESULT_OK) {
             final Uri fileUri = data.getData();
             saveDocumentAs(fileUri);
+        } else if (requestCode == REQUEST_CODE_SAVE_PDF_AS && resultCode == RESULT_OK && data != null
+                && data.getData() != null) {
+            final Uri fileUri = data.getData();
+            try {
+                final int takeFlags = data.getFlags() &
+                        (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                if (takeFlags != 0) {
+                    getContentResolver().takePersistableUriPermission(fileUri, takeFlags);
+                }
+            } catch (SecurityException ignored) {
+                // Some providers grant a one-shot URI and do not support persistence.
+            }
+            savePdfAs(fileUri);
         } else if (requestCode == REQUEST_CODE_EXPORT_TO_PDF && resultCode == RESULT_OK) {
             final Uri fileUri = data.getData();
             exportToPDF(fileUri);

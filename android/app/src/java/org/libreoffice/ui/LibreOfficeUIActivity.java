@@ -142,6 +142,11 @@ public class LibreOfficeUIActivity extends AppCompatActivity implements View.OnC
     private View nestedScrollView;
 
     @Override
+    protected void attachBaseContext(android.content.Context newBase) {
+        super.attachBaseContext(org.libreoffice.LocaleHelper.wrap(newBase));
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), true);

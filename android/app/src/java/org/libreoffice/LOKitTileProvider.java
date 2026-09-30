@@ -68,7 +68,10 @@ class LOKitTileProvider implements TileProvider {
 
         mOffice = new Office(LibreOfficeKit.getLibreOfficeKitHandle());
         mOffice.setMessageCallback(messageCallback);
-        mOffice.setOptionalFeatures(Document.LOK_FEATURE_DOCUMENT_PASSWORD);
+        // Request annotation callbacks as well as password callbacks.  This
+        // keeps the mobile comment editor in sync with Draw/Writer.
+        mOffice.setOptionalFeatures(Document.LOK_FEATURE_DOCUMENT_PASSWORD
+                | Document.LOK_FEATURE_NO_TILED_ANNOTATIONS);
         mContext.setTileProvider(this);
         mInputFile = input;
 
@@ -90,7 +93,8 @@ class LOKitTileProvider implements TileProvider {
             mOffice = new Office(handle);
             Log.i(LOGTAG, "====> new Office created");
             mOffice.setMessageCallback(messageCallback);
-            mOffice.setOptionalFeatures(Document.LOK_FEATURE_DOCUMENT_PASSWORD);
+            mOffice.setOptionalFeatures(Document.LOK_FEATURE_DOCUMENT_PASSWORD
+                    | Document.LOK_FEATURE_NO_TILED_ANNOTATIONS);
             Log.i(LOGTAG, "====> setup Lokit callback and optional features (password support)");
             mDocument = mOffice.documentLoad(
                     (new File(fileToBeEncoded.getParent(),encodedFileName)).getPath()
@@ -161,8 +165,12 @@ class LOKitTileProvider implements TileProvider {
             }catch (JSONException e) {
                 e.printStackTrace();
             }
-        } else if (mDocument.getDocumentType() == Document.DOCTYPE_PRESENTATION){
-            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:InsertPage"));
+        } else if (mDocument.getDocumentType() == Document.DOCTYPE_PRESENTATION
+                || mDocument.getDocumentType() == Document.DOCTYPE_DRAWING){
+            // Draw and Impress use the same page command.  The command result
+            // callback refreshes the page list after the asynchronous core edit.
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND_NOTIFY, ".uno:InsertPage", true));
+            return;
         }
 
         String partName = mDocument.getPartName(parts);
@@ -173,6 +181,14 @@ class LOKitTileProvider implements TileProvider {
         resetDocumentSize();
         final DocumentPartView partView = new DocumentPartView(parts, partName);
         mContext.getDocumentPartView().add(partView);
+    }
+
+    @Override
+    public void duplicatePart() {
+        if (isPresentation() || isDrawing()) {
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND_NOTIFY,
+                    ".uno:DuplicatePage", true));
+        }
     }
 
     public void resetParts(){
@@ -208,7 +224,7 @@ class LOKitTileProvider implements TileProvider {
             name.put("type", "string");
             name.put("value", partName);
             parameter.put("Name", name);
-            if(isPresentation()){
+            if(isPresentation() || isDrawing()){
                 LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND_NOTIFY, ".uno:RenamePage", parameter.toString(),true));
             }else {
                 JSONObject index = new JSONObject();
@@ -224,12 +240,15 @@ class LOKitTileProvider implements TileProvider {
 
     public void removePart() {
         try{
-            if (!isSpreadsheet() && !isPresentation()) {
-                //document must be spreadsheet or presentation
+            if (!isSpreadsheet() && !isPresentation() && !isDrawing()) {
+                //document must have multiple editable parts
                 return;
             }
 
-            if(isPresentation()){
+            if(isPresentation() || isDrawing()){
+                if(getPartsCount() < 2){
+                    return;
+                }
                 LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND_NOTIFY, ".uno:DeletePage", true));
                 return;
             }
@@ -262,7 +281,7 @@ class LOKitTileProvider implements TileProvider {
         mDocument.saveAs(newFilePath, format, options);
         final boolean ok;
         if (!mOffice.getError().isEmpty()){
-            ok = true;
+            ok = false;
             Log.e("Save Error", mOffice.getError());
             if (format.equals("svg")) {
                 // error in creating temp slideshow svg file
@@ -279,7 +298,7 @@ class LOKitTileProvider implements TileProvider {
                 });
             }
         } else {
-            ok = false;
+            ok = true;
             if (format.equals("svg")) {
                 // successfully created temp slideshow svg file
                 LOKitShell.getMainHandler().post(new Runnable() {
@@ -706,6 +725,28 @@ class LOKitTileProvider implements TileProvider {
     @Override
     public void postUnoCommand(String command, String arguments, boolean notifyWhenFinished) {
         mDocument.postUnoCommand(command, arguments, notifyWhenFinished);
+    }
+
+    /** Erase a circular region inside the Draw graphic at a document point. */
+    public void eraseAt(PointF documentCoordinate, float radiusPixels) {
+        try {
+            JSONObject args = new JSONObject();
+            JSONObject x = new JSONObject();
+            x.put("type", "long");
+            x.put("value", (int) pixelToTwip(documentCoordinate.x, mDPI));
+            JSONObject y = new JSONObject();
+            y.put("type", "long");
+            y.put("value", (int) pixelToTwip(documentCoordinate.y, mDPI));
+            JSONObject radius = new JSONObject();
+            radius.put("type", "long");
+            radius.put("value", Math.max(1, (int) pixelToTwip(radiusPixels, mDPI)));
+            args.put("X", x);
+            args.put("Y", y);
+            args.put("Radius", radius);
+            mDocument.postUnoCommand(".uno:LOKEraseAt", args.toString(), false);
+        } catch (JSONException e) {
+            Log.e(LOGTAG, "Unable to erase graphic pixels", e);
+        }
     }
 
     private void setTextSelection(int type, PointF documentCoordinate) {

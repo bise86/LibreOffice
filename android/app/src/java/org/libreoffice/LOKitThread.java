@@ -24,6 +24,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  */
 class LOKitThread extends Thread {
     private static final String LOGTAG = LOKitThread.class.getSimpleName();
+    private static final float ERASER_RADIUS_SCREEN_PIXELS = 28.0f;
 
     private final LinkedBlockingQueue<LOEvent> mEventQueue = new LinkedBlockingQueue<LOEvent>();
 
@@ -32,6 +33,15 @@ class LOKitThread extends Thread {
     private ImmutableViewportMetrics mViewportMetrics;
     private GeckoLayerClient mLayerClient;
     private final LibreOfficeMainActivity mContext;
+    private PointF mLastEraserPoint;
+
+    private static float eraserRadiusInLayerPixels(float zoomFactor) {
+        return ERASER_RADIUS_SCREEN_PIXELS / Math.max(0.1f, zoomFactor);
+    }
+
+    private static float eraserStepInLayerPixels(float zoomFactor) {
+        return 12.0f / Math.max(0.1f, zoomFactor);
+    }
 
     LOKitThread(LibreOfficeMainActivity context) {
         mContext = context;
@@ -406,16 +416,45 @@ class LOKitThread extends Thread {
         boolean editing = LOKitShell.isEditingEnabled();
         float zoomFactor = mViewportMetrics.getZoomFactor();
 
-        if (touchType.equals("LongPress")) {
+        if (touchType.equals("EraserStart")) {
+            mLastEraserPoint = null;
+        } else if (touchType.equals("LongPress")) {
             mInvalidationHandler.changeStateTo(InvalidationHandler.OverlayState.TRANSITION);
-            mTileProvider.mouseButtonDown(documentCoordinate, 1, zoomFactor);
-            mTileProvider.mouseButtonUp(documentCoordinate, 1, zoomFactor);
-            mTileProvider.mouseButtonDown(documentCoordinate, 2, zoomFactor);
-            mTileProvider.mouseButtonUp(documentCoordinate, 2, zoomFactor);
+            if (mContext.isEraserMode() && editing) {
+                ((LOKitTileProvider) mTileProvider).eraseAt(documentCoordinate,
+                        eraserRadiusInLayerPixels(zoomFactor));
+                mContext.setDocumentChanged(true);
+                mLastEraserPoint = documentCoordinate;
+            } else {
+                mTileProvider.mouseButtonDown(documentCoordinate, 1, zoomFactor);
+                mTileProvider.mouseButtonUp(documentCoordinate, 1, zoomFactor);
+                mTileProvider.mouseButtonDown(documentCoordinate, 2, zoomFactor);
+                mTileProvider.mouseButtonUp(documentCoordinate, 2, zoomFactor);
+            }
         } else if (touchType.equals("SingleTap")) {
             mInvalidationHandler.changeStateTo(InvalidationHandler.OverlayState.TRANSITION);
-            mTileProvider.mouseButtonDown(documentCoordinate, 1, zoomFactor);
-            mTileProvider.mouseButtonUp(documentCoordinate, 1, zoomFactor);
+            if (mContext.isEraserMode() && editing) {
+                ((LOKitTileProvider) mTileProvider).eraseAt(documentCoordinate,
+                        eraserRadiusInLayerPixels(zoomFactor));
+                mContext.setDocumentChanged(true);
+                mLastEraserPoint = documentCoordinate;
+            } else {
+                mTileProvider.mouseButtonDown(documentCoordinate, 1, zoomFactor);
+                mTileProvider.mouseButtonUp(documentCoordinate, 1, zoomFactor);
+            }
+        } else if (touchType.equals("EraserMove") && editing && mContext.isEraserMode()) {
+            // A drag in eraser mode edits each graphic crossed by the finger.
+            // The distance guard prevents a dense stream of duplicate commands.
+            if (mLastEraserPoint == null
+                    || Math.abs(documentCoordinate.x - mLastEraserPoint.x)
+                            > eraserStepInLayerPixels(zoomFactor)
+                    || Math.abs(documentCoordinate.y - mLastEraserPoint.y)
+                            > eraserStepInLayerPixels(zoomFactor)) {
+                ((LOKitTileProvider) mTileProvider).eraseAt(documentCoordinate,
+                        eraserRadiusInLayerPixels(zoomFactor));
+                mContext.setDocumentChanged(true);
+                mLastEraserPoint = documentCoordinate;
+            }
         } else if (touchType.equals("GraphicSelectionStart") && editing) {
             mTileProvider.setGraphicSelectionStart(documentCoordinate);
         } else if (touchType.equals("GraphicSelectionEnd") && editing) {

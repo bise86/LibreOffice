@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Environment;
 import android.provider.MediaStore;
@@ -15,7 +16,10 @@ import androidx.core.content.FileProvider;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.json.JSONException;
@@ -37,6 +41,10 @@ class FormattingController implements View.OnClickListener {
     private static final int TAKE_PHOTO = 1;
     private static final int SELECT_PHOTO = 2;
     private static final int IMAGE_BUFFER_SIZE = 4 * 1024;
+    private static final int[] DRAWING_COLORS = {
+            Color.BLACK, Color.RED, Color.BLUE, Color.GREEN,
+            Color.YELLOW, Color.MAGENTA, Color.CYAN, Color.WHITE
+    };
 
     private final LibreOfficeMainActivity mContext;
     private String mCurrentPhotoPath;
@@ -62,7 +70,12 @@ class FormattingController implements View.OnClickListener {
 
         mContext.findViewById(R.id.button_insert_line).setOnClickListener(this);
         mContext.findViewById(R.id.button_insert_rect).setOnClickListener(this);
+        mContext.findViewById(R.id.button_insert_text).setOnClickListener(this);
         mContext.findViewById(R.id.button_insert_picture).setOnClickListener(this);
+        mContext.findViewById(R.id.button_insert_freehand).setOnClickListener(this);
+        mContext.findViewById(R.id.button_drawing_color).setOnClickListener(this);
+        mContext.findViewById(R.id.button_eraser).setOnClickListener(this);
+        mContext.findViewById(R.id.button_insert_signature).setOnClickListener(this);
 
         mContext.findViewById(R.id.button_insert_table).setOnClickListener(this);
         mContext.findViewById(R.id.button_delete_table).setOnClickListener(this);
@@ -78,13 +91,15 @@ class FormattingController implements View.OnClickListener {
     public void onClick(View view) {
         ImageButton button = (ImageButton) view;
 
-        if (button.isSelected()) {
-            button.getBackground().setState(new int[]{-android.R.attr.state_selected});
-        } else {
-            button.getBackground().setState(new int[]{android.R.attr.state_selected});
-        }
+        button.setSelected(!button.isSelected());
+        button.getBackground().setState(button.isSelected()
+                ? new int[]{android.R.attr.state_selected}
+                : new int[]{-android.R.attr.state_selected});
 
         final int buttonId = button.getId();
+        if (buttonId != R.id.button_eraser && buttonId != R.id.button_drawing_color) {
+            mContext.setEraserMode(false);
+        }
         if (buttonId == R.id.button_insertFormatListBullets) {
             LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:DefaultBullet"));
         } else if (buttonId == R.id.button_insertFormatListNumbering) {
@@ -113,8 +128,33 @@ class FormattingController implements View.OnClickListener {
             LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:JustifyPara"));
         } else if (buttonId == R.id.button_insert_line) {
             LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:Line"));
+            mContext.setDocumentChanged(true);
         } else if (buttonId == R.id.button_insert_rect) {
             LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:Rect"));
+            mContext.setDocumentChanged(true);
+        } else if (buttonId == R.id.button_insert_text) {
+            // Draw text boxes should not paint an opaque rectangle over the imported PDF.
+            // The URL parameters are applied to the new shape before the user draws it.
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND,
+                    ".uno:Text?FillStyle:short=0&FillTransparence:short=100"
+                            + "&LineStyle:short=0&IsSticky:bool=true"));
+            mContext.setEraserMode(false);
+            mContext.setDocumentChanged(true);
+        } else if (buttonId == R.id.button_insert_freehand) {
+            mContext.setEraserMode(false);
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND,
+                    ".uno:Freeline?IsSticky:bool=true"));
+            mContext.setDocumentChanged(true);
+        } else if (buttonId == R.id.button_drawing_color) {
+            showDrawingColorPicker();
+        } else if (buttonId == R.id.button_eraser) {
+            mContext.setEraserMode(button.isSelected());
+            if (!button.isSelected()) {
+                LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:SelectObject"));
+            }
+        } else if (buttonId == R.id.button_insert_signature) {
+            mContext.setEraserMode(false);
+            showSignaturePad();
         } else if (buttonId == R.id.button_font_shrink) {
             LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:Shrink"));
         } else if (buttonId == R.id.button_font_grow) {
@@ -129,6 +169,83 @@ class FormattingController implements View.OnClickListener {
             insertTable();
         } else if (buttonId == R.id.button_delete_table) {
             deleteTable();
+        }
+    }
+
+    private void showDrawingColorPicker() {
+        final String[] colorNames = mContext.getResources().getStringArray(R.array.drawing_color_names);
+        int selected = 0;
+        for (int i = 0; i < DRAWING_COLORS.length; i++) {
+            if (DRAWING_COLORS[i] == mDrawingColor) {
+                selected = i;
+                break;
+            }
+        }
+        new AlertDialog.Builder(mContext)
+                .setTitle(R.string.drawing_color)
+                .setSingleChoiceItems(colorNames, selected, (dialog, which) -> {
+                    mDrawingColor = DRAWING_COLORS[which];
+                    sendDrawingColorChange(mDrawingColor);
+                    dialog.dismiss();
+                })
+                .setNegativeButton(R.string.alert_cancel, null)
+                .show();
+    }
+
+    void showCommentDialog() {
+        final EditText comment = new EditText(mContext);
+        comment.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        comment.setMinLines(3);
+        comment.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+        comment.setHint(R.string.comment_hint);
+        int padding = (int) (16 * mContext.getResources().getDisplayMetrics().density);
+        comment.setPadding(padding, padding, padding, padding);
+
+        AlertDialog dialog = new AlertDialog.Builder(mContext)
+                .setTitle(R.string.insert_comment)
+                .setView(comment)
+                .setNegativeButton(R.string.alert_cancel, null)
+                .setPositiveButton(R.string.alert_ok, null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String text = comment.getText().toString().trim();
+                    if (text.isEmpty()) {
+                        comment.setError(mContext.getString(R.string.comment_empty));
+                        return;
+                    }
+                    try {
+                        JSONObject textValue = new JSONObject();
+                        textValue.put("type", "string");
+                        textValue.put("value", text);
+                        JSONObject args = new JSONObject();
+                        args.put("Text", textValue);
+                        LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND,
+                                ".uno:InsertAnnotation", args.toString()));
+                        mContext.setDocumentChanged(true);
+                        dialog.dismiss();
+                    } catch (JSONException e) {
+                        Log.e(LOGTAG, "Unable to insert comment", e);
+                    }
+                }));
+        dialog.show();
+    }
+
+    private int mDrawingColor = Color.BLACK;
+
+    private void sendDrawingColorChange(int color) {
+        try {
+            JSONObject value = new JSONObject();
+            value.put("type", "long");
+            value.put("value", color & 0x00FFFFFF);
+            JSONObject arguments = new JSONObject();
+            arguments.put("Color", value);
+            LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND,
+                    ".uno:XLineColor", arguments.toString()));
+        } catch (JSONException e) {
+            Log.e(LOGTAG, "Unable to set drawing color", e);
         }
     }
 
@@ -444,15 +561,62 @@ class FormattingController implements View.OnClickListener {
     }
 
     private void sendInsertGraphic() {
+        sendInsertGraphicFile(mCurrentPhotoPath);
+    }
+
+    private void sendInsertGraphicFile(String filePath) {
         JSONObject rootJson = new JSONObject();
         try {
-            addProperty(rootJson, "FileName", "string", "file://" + mCurrentPhotoPath);
+            addProperty(rootJson, "FileName", "string", "file://" + filePath);
         } catch (JSONException ex) {
             ex.printStackTrace();
         }
         LOKitShell.sendEvent(new LOEvent(LOEvent.UNO_COMMAND, ".uno:InsertGraphic", rootJson.toString()));
         LOKitShell.sendEvent(new LOEvent(LOEvent.REFRESH));
         mContext.setDocumentChanged(true);
+    }
+
+    private void showSignaturePad() {
+        final SignaturePadView signaturePad = new SignaturePadView(mContext);
+        int height = (int) (220 * mContext.getResources().getDisplayMetrics().density);
+        LinearLayout container = new LinearLayout(mContext);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(8, 8, 8, 8);
+        container.addView(signaturePad, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, height));
+
+        final AlertDialog dialog = new AlertDialog.Builder(mContext)
+                .setTitle(R.string.signature_title)
+                .setView(container)
+                .setNeutralButton(R.string.signature_clear, null)
+                .setNegativeButton(R.string.alert_cancel, null)
+                .setPositiveButton(R.string.alert_ok, null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            Button clearButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            clearButton.setOnClickListener(view -> signaturePad.clear());
+            Button insertButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            insertButton.setOnClickListener(view -> {
+                if (signaturePad.isEmpty()) {
+                    Snackbar.make(signaturePad, R.string.signature_empty, Snackbar.LENGTH_SHORT).show();
+                    return;
+                }
+                File signatureFile = null;
+                try {
+                    signatureFile = File.createTempFile("LibreOffice_signature_", ".png",
+                            mContext.getCacheDir());
+                    try (FileOutputStream output = new FileOutputStream(signatureFile)) {
+                        signaturePad.toBitmap().compress(Bitmap.CompressFormat.PNG, 100, output);
+                    }
+                    sendInsertGraphicFile(signatureFile.getAbsolutePath());
+                    dialog.dismiss();
+                } catch (IOException e) {
+                    Log.e(LOGTAG, "Unable to save handwritten signature", e);
+                    Snackbar.make(signaturePad, R.string.message_saving_failed, Snackbar.LENGTH_SHORT).show();
+                }
+            });
+        });
+        dialog.show();
     }
 
     private void compressImage(int grade) {

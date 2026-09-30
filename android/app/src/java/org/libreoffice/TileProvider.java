@@ -200,6 +200,9 @@ public interface TileProvider {
      * Set the new page size of the document when changed
      */
     void setDocumentSize(int pageWidth, int pageHeight);
+
+    /** Add a copy of the current document part. */
+    void duplicatePart();
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

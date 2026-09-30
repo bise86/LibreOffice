@@ -181,6 +181,16 @@ public:
     virtual void postMouseEvent(int nType, int nX, int nY, int nCount, int nButtons, int nModifier) = 0;
 
     /**
+     * Erase a circular portion of the graphic under the given document point.
+     * Coordinates and radius are in twips, matching postMouseEvent().
+     * Returns true when an object was changed or deleted.
+     */
+    virtual bool eraseAt(int /*nX*/, int /*nY*/, int /*nRadius*/)
+    {
+        return false;
+    }
+
+    /**
      * Sets the start or end of a text selection.
      *
      * @see lok::Document::setTextSelection().
